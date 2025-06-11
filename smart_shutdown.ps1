@@ -34,7 +34,7 @@
 
 # 日志配置
 [string]$LogDirectory = Join-Path -Path $PSScriptRoot -ChildPath "logs"
-[string]$LogFile = Join-Path -Path $LogDirectory -ChildPath "network_monitor_$(Get-Date -Format 'yyyyMMdd').log"
+#[string]$LogFile = Join-Path -Path $LogDirectory -ChildPath "network_monitor_$(Get-Date -Format 'yyyyMMdd').log"
 [int]$MaxLogDays = 30
 
 # =================================================
@@ -51,6 +51,11 @@ function Write-Log {
         [Parameter(Mandatory=$true)]
         [string]$Message
     )
+
+    # ===================== V0.2update =====================
+    # 每次写日志时，都重新根据当前日期确定日志文件名
+    $LogFile = Join-Path -Path $LogDirectory -ChildPath "network_monitor_$(Get-Date -Format 'yyyyMMdd').log"
+    # ====================================================
 
     $logTimestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
     $logEntry = "[$logTimestamp] [$Level] $Message"
