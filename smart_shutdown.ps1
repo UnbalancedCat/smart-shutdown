@@ -15,7 +15,7 @@
 # ==================== 配置参数 ====================
 
 # 监控的目标IP地址
-[string]$TargetIP = "192.168.3.3"
+[string]$TargetIP = "192.168.3.15"
 
 # 正常监控时的ping间隔（秒）
 [int]$NormalPingInterval = 15
