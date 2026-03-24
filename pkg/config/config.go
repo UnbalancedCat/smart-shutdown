@@ -19,7 +19,7 @@ type Config struct {
 
 func DefaultConfig() *Config {
 	return &Config{
-		TargetIP:             "192.168.3.3",
+		TargetIP:             "192.168.3.1",
 		MonitorWindowSeconds: 180,
 		ShutdownCountdown:    60,
 		NormalPingInterval:   15,

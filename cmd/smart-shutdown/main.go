@@ -130,6 +130,12 @@ func main() {
 						}
 					}
 				}
+
+				if config.ConfirmConfigCleanup() {
+					configDir := config.GetConfigDir()
+					os.RemoveAll(configDir)
+					fmt.Println("配置文件与日志已清除。")
+				}
 			},
 		},
 		{
@@ -178,6 +184,14 @@ func main() {
 			Use:   "start",
 			Short: "唤起执行守护后台",
 			Run: func(cmd *cobra.Command, args []string) {
+				if !config.ConfigFileExists() {
+					newCfg, err := config.InteractiveSetup()
+					if err != nil {
+						logger.Fail("配置初始化失败: %v", err)
+						return
+					}
+					cfg = newCfg
+				}
 				handleServiceControl(svc, "start")
 			},
 		},
