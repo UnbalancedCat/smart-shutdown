@@ -1,0 +1,27 @@
+# Binaries for programs and plugins
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test binary, built with `go test -c`
+*.test
+
+# Output directory for cross-platform builds
+/bin/
+/build/
+smart-monitor
+smart-monitor.exe
+
+# Output of the go coverage tool
+*.out
+
+# IDE configs
+.idea/
+.vscode/
+
+# Local logs or configuration testing directories
+logs/
+*.log
+config.json
