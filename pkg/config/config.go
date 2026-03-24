@@ -43,7 +43,14 @@ func GetLogDir() string {
 func LoadConfig() (*Config, error) {
 	configDir := GetConfigDir()
 	configPath := filepath.Join(configDir, "config.json")
+	return loadConfigFile(configPath)
+}
 
+func LoadConfigFrom(path string) (*Config, error) {
+	return loadConfigFile(path)
+}
+
+func loadConfigFile(configPath string) (*Config, error) {
 	data, err := os.ReadFile(configPath)
 	if err != nil {
 		if os.IsNotExist(err) {

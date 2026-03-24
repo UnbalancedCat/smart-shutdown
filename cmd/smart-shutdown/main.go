@@ -1,24 +1,29 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"io"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
+	"time"
 
 	"github.com/kardianos/service"
 	"github.com/spf13/cobra"
 	"smart-shutdown/pkg/config"
 	"smart-shutdown/pkg/daemon"
 	"smart-shutdown/pkg/logger"
+	"smart-shutdown/pkg/monitor"
 	"smart-shutdown/pkg/updater"
 )
 
 var AppVersion = "dev"
 var verbose bool
+var configPath string
 
 func main() {
 	if err := logger.InitLogger(); err != nil {
@@ -26,7 +31,22 @@ func main() {
 		os.Exit(1)
 	}
 
-	cfg, err := config.LoadConfig()
+	// Pre-parse -c / --config before cobra so we can load correct config early
+	for i, arg := range os.Args[1:] {
+		if (arg == "-c" || arg == "--config") && i+1 < len(os.Args)-1 {
+			configPath = os.Args[i+2]
+			break
+		}
+	}
+
+	var cfg *config.Config
+	var err error
+	if configPath != "" {
+		logger.Debug("使用自定义配置文件: %s", configPath)
+		cfg, err = config.LoadConfigFrom(configPath)
+	} else {
+		cfg, err = config.LoadConfig()
+	}
 	if err != nil {
 		logger.Crit("读取配置文件失败: %v", err)
 		os.Exit(1)
@@ -38,7 +58,16 @@ func main() {
 		os.Exit(1)
 	}
 
-	var showVersion bool
+	var (
+		showVersion     bool
+		tmpTargetIP     string
+		tmpWindowSec    int
+		tmpShutdownCnt  int
+		tmpPingInt      int
+		tmpOverrideBg   bool
+		tmpStopAfterStr string
+		tmpStopAtStr    string
+	)
 
 	var rootCommand = &cobra.Command{
 		Use:   "smart-shutdown",
@@ -56,16 +85,94 @@ func main() {
 				return
 			}
 
-			err := svc.Run()
-			if err != nil {
-				logger.Fail("后台监控流崩溃: %v", err)
+			if !service.Interactive() {
+				err := svc.Run()
+				if err != nil {
+					logger.Fail("后台监控流崩溃: %v", err)
+				}
+				return
 			}
+
+			// Interactive foreground mode
+			logger.SwitchToFrontLog()
+			
+			if tmpTargetIP != "" {
+				if net.ParseIP(tmpTargetIP) != nil {
+					cfg.TargetIP = tmpTargetIP
+				} else {
+					logger.Fail("参数解析错误: 非法的 IP 地址 %s", tmpTargetIP)
+					return
+				}
+			}
+			if tmpWindowSec > 0 { cfg.MonitorWindowSeconds = tmpWindowSec }
+			if tmpShutdownCnt > 0 { cfg.ShutdownCountdown = tmpShutdownCnt }
+			if tmpPingInt > 0 { cfg.NormalPingInterval = tmpPingInt }
+
+			if tmpOverrideBg {
+				status, _ := svc.Status()
+				if status == service.StatusRunning {
+					logger.Info("检测到后台服务运行中，正在挂起以接管前台监控...")
+					service.Control(svc, "stop")
+					defer func() {
+						logger.Info("前台监控结束，恢复后台服务...")
+						service.Control(svc, "start")
+					}()
+				}
+			}
+
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+
+			importTime := false
+			var earliest = time.Now().Add(100 * 365 * 24 * time.Hour) // very far
+			if tmpStopAfterStr != "" {
+				d, err := time.ParseDuration(tmpStopAfterStr)
+				if err != nil {
+					logger.Fail("解析持续时间失败 (如 120m, 2h): %v", err)
+					return
+				}
+				t := time.Now().Add(d)
+				if t.Before(earliest) { earliest = t; importTime = true }
+			}
+			if tmpStopAtStr != "" {
+				layout := "2006-01-02 15:04:05"
+				t, err := time.Parse(layout, tmpStopAtStr)
+				if err != nil {
+					logger.Fail("解析绝对时间失败 (格式需为 2006-01-02 15:04:05): %v", err)
+					return
+				}
+				if t.Before(earliest) { earliest = t; importTime = true }
+			}
+
+			if importTime {
+				if earliest.Before(time.Now()) {
+					logger.Fail("指定的结束时间不能早于当前时间")
+					cancel()
+					return
+				}
+				var deadlineCancel context.CancelFunc
+				ctx, deadlineCancel = context.WithDeadline(ctx, earliest)
+				defer deadlineCancel()
+				logger.Info("已设定前台监控截止退出时间: %s", earliest.Format("2006-01-02 15:04:05"))
+			}
+
+			logger.Info("开始执行前台监控进程...")
+			monitor.Run(ctx, cfg)
 		},
 	}
 
 	rootCommand.CompletionOptions.DisableDefaultCmd = true
 	rootCommand.Flags().BoolVarP(&showVersion, "version", "V", false, "输出当前二进制内核版本并联网拉取发布树状态")
 	rootCommand.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "打印底层部署及环境追溯 Debug 信息")
+	rootCommand.PersistentFlags().StringVarP(&configPath, "config", "c", "", "指定自定义配置文件路径 (如 ./example_config.json)")
+
+	rootCommand.Flags().StringVar(&tmpTargetIP, "target-ip", "", "临时覆盖: 目标监控 IP")
+	rootCommand.Flags().IntVar(&tmpWindowSec, "window-sec", 0, "临时覆盖: 容忍超时时长 (秒)")
+	rootCommand.Flags().IntVar(&tmpShutdownCnt, "shutdown-cnt", 0, "临时覆盖: 关机倒计时 (秒)")
+	rootCommand.Flags().IntVar(&tmpPingInt, "ping-interval", 0, "临时覆盖: 发包间隔 (秒)")
+	rootCommand.Flags().BoolVar(&tmpOverrideBg, "override-bg", false, "挂起后台运行的守护进程，由前台全面接管")
+	rootCommand.Flags().StringVar(&tmpStopAfterStr, "stop-after", "", "前台运行多少时长后自动退出 (如 120m, 2h)")
+	rootCommand.Flags().StringVar(&tmpStopAtStr, "stop-at", "", "前台运行至指定时间自动退出 (如 '2026-03-24 23:59:00')")
 
 	cmds := []*cobra.Command{
 		{
@@ -277,8 +384,63 @@ func main() {
 		},
 	}
 
+	var pauseCmd = &cobra.Command{
+		Use:   "pause",
+		Short: "临时休眠后台运行的守护进程（不开启前台监控）",
+		Run: func(cmd *cobra.Command, args []string) {
+			if tmpStopAfterStr == "" && tmpStopAtStr == "" {
+				logger.Fail("必须指定 --stop-after 或 --stop-at 参数才能执行休眠指令")
+				return
+			}
+
+			var until = time.Now().Add(100 * 365 * 24 * time.Hour)
+			if tmpStopAfterStr != "" {
+				d, err := time.ParseDuration(tmpStopAfterStr)
+				if err != nil {
+					logger.Fail("解析持续时间失败: %v", err)
+					return
+				}
+				t := time.Now().Add(d)
+				if t.Before(until) { until = t }
+			}
+			if tmpStopAtStr != "" {
+				layout := "2006-01-02 15:04:05"
+				t, err := time.Parse(layout, tmpStopAtStr)
+				if err != nil {
+					logger.Fail("解析绝对时间失败: %v", err)
+					return
+				}
+				if t.Before(until) { until = t }
+			}
+
+			if until.Before(time.Now()) {
+				logger.Fail("指定的唤醒时间不能早于当前时间")
+				return
+			}
+
+			if err := config.SetPause(until); err != nil {
+				logger.Fail("写入休眠指令失败: %v", err)
+				return
+			}
+			logger.Succ("指令下达成功！后台守护进程将挂机休息至 %s", until.Format("2006-01-02 15:04:05"))
+		},
+	}
+	pauseCmd.Flags().StringVar(&tmpStopAfterStr, "stop-after", "", "休眠多少时长后自动唤醒 (如 120m, 2h)")
+	pauseCmd.Flags().StringVar(&tmpStopAtStr, "stop-at", "", "休眠至指定时间自动唤醒 (如 '2026-03-24 23:59:00')")
+
+	var resumeCmd = &cobra.Command{
+		Use:   "resume",
+		Short: "撤销休眠指令，立即唤醒后台网络探测",
+		Run: func(cmd *cobra.Command, args []string) {
+			config.ClearPause()
+			logger.Succ("休眠指令已撤销，后台将在下一轮探测周期中重新激活！")
+		},
+	}
+
 	configCmd.AddCommand(configSetCmd)
 	rootCommand.AddCommand(configCmd)
+	rootCommand.AddCommand(pauseCmd)
+	rootCommand.AddCommand(resumeCmd)
 
 	for _, c := range cmds {
 		rootCommand.AddCommand(c)

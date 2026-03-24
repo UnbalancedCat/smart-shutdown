@@ -18,6 +18,7 @@ func Run(ctx context.Context, cfg *config.Config) {
 
 	var failureStartTime time.Time
 	var inFailureWindow bool = false
+	var wasPausedBefore bool = false
 
 	normalStatusCounter := 0
 	const normalStatusLogInterval = 24
@@ -28,6 +29,27 @@ func Run(ctx context.Context, cfg *config.Config) {
 			logger.Info("接收到系统停止指令, 退出核心调度监控")
 			return
 		default:
+		}
+
+		isPaused, remainingSec := config.IsPaused()
+		if isPaused {
+			if !wasPausedBefore {
+				mins := remainingSec / 60
+				if mins < 1 {
+					mins = 1
+				}
+				logger.Info("进入管理员特设休眠挂起状态, 预计将在 %d 分钟后自动唤醒", mins)
+				wasPausedBefore = true
+				if inFailureWindow {
+					inFailureWindow = false
+					normalStatusCounter = 0
+				}
+			}
+			time.Sleep(15 * time.Second)
+			continue
+		} else if wasPausedBefore {
+			logger.Info("休眠指令逾期或已被撤消, 唤醒并恢复网络探测")
+			wasPausedBefore = false
 		}
 
 		isOnline := pinger.Ping(cfg.TargetIP, 3)

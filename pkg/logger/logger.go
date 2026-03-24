@@ -34,6 +34,24 @@ func InitLogger() error {
 	return nil
 }
 
+func SwitchToFrontLog() {
+	if fileLogger != nil {
+		fileLogger.Close()
+	}
+	logDir := config.GetLogDir()
+	if err := os.MkdirAll(logDir, 0755); err != nil {
+		logDir = "logs"
+	}
+	logFile := filepath.Join(logDir, "network_monitor_front.log")
+	fileLogger = &lumberjack.Logger{
+		Filename:   logFile,
+		MaxSize:    10,
+		MaxBackups: 30,
+		MaxAge:     30,
+		Compress:   false,
+	}
+}
+
 func EnableDebug() {
 	debugEnabled = true
 }
