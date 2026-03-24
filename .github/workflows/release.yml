@@ -1,10 +1,9 @@
-name: Release
+﻿name: Release
 
 on:
   push:
     tags:
-      - 'v*' # 当推送标签形如 v1.0.0 时触发自动构建
-
+      - 'v*' # 褰撴帹閫佹爣绛惧舰濡?v1.0.0 鏃惰Е鍙戣嚜鍔ㄦ瀯寤?
 permissions:
   contents: write
 
@@ -31,16 +30,16 @@ jobs:
           mkdir -p build_output
           
           echo "Building Windows amd64..."
-          GOOS=windows GOARCH=amd64 go build -ldflags="-s -w" -o build_output/smart-shutdown_windows_amd64.exe ./cmd/smart-shutdown
+          GOOS=windows GOARCH=amd64 go build -ldflags="-X 'main.AppVersion=${{ github.ref_name }}' -s -w" -o build_output/smart-shutdown_windows_amd64.exe ./cmd/smart-shutdown
           
           echo "Building Windows arm64..."
-          GOOS=windows GOARCH=arm64 go build -ldflags="-s -w" -o build_output/smart-shutdown_windows_arm64.exe ./cmd/smart-shutdown
+          GOOS=windows GOARCH=arm64 go build -ldflags="-X 'main.AppVersion=${{ github.ref_name }}' -s -w" -o build_output/smart-shutdown_windows_arm64.exe ./cmd/smart-shutdown
           
           echo "Building Linux amd64..."
-          GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o build_output/smart-shutdown_linux_amd64 ./cmd/smart-shutdown
+          GOOS=linux GOARCH=amd64 go build -ldflags="-X 'main.AppVersion=${{ github.ref_name }}' -s -w" -o build_output/smart-shutdown_linux_amd64 ./cmd/smart-shutdown
           
           echo "Building Linux arm64..."
-          GOOS=linux GOARCH=arm64 go build -ldflags="-s -w" -o build_output/smart-shutdown_linux_arm64 ./cmd/smart-shutdown
+          GOOS=linux GOARCH=arm64 go build -ldflags="-X 'main.AppVersion=${{ github.ref_name }}' -s -w" -o build_output/smart-shutdown_linux_arm64 ./cmd/smart-shutdown
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v1
@@ -51,3 +50,4 @@ jobs:
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+

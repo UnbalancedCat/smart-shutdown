@@ -7,6 +7,7 @@ require (
 	github.com/kardianos/service v1.2.4
 	github.com/prometheus-community/pro-bing v0.8.0
 	github.com/spf13/cobra v1.10.2
+	golang.org/x/mod v0.34.0
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1
 )
 
