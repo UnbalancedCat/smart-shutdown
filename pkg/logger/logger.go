@@ -1,70 +1,89 @@
 package logger
 
 import (
-	"io"
-	"log"
+	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/fatih/color"
 	"gopkg.in/natefinch/lumberjack.v2"
 	"smart-shutdown/pkg/config"
 )
 
-var (
-	infoLogger *log.Logger
-	succLogger *log.Logger
-	warnLogger *log.Logger
-	failLogger *log.Logger
-	critLogger *log.Logger
-)
+var fileLogger *lumberjack.Logger
 
-// InitLogger 初始化全局日志系统，将日志同时输出到终端色彩日志和滚动文件
 func InitLogger() error {
 	logDir := config.GetLogDir()
 	if err := os.MkdirAll(logDir, 0755); err != nil {
-		// 降级为当前目录，适用于未具有系统写权限的 Local 执行
 		logDir = "logs"
 		os.MkdirAll(logDir, 0755)
 	}
 
 	logFile := filepath.Join(logDir, "network_monitor.log")
 
-	// 使用 lumberjack 实现每天轮转和最大保留 30 天功能
-	ljLogger := &lumberjack.Logger{
+	fileLogger = &lumberjack.Logger{
 		Filename:   logFile,
-		MaxSize:    10,   // 每个切片最大兆字节 (MB)
-		MaxBackups: 30,   // 保留最近 30 个切片
-		MaxAge:     30,   // 保留最近 30 天的文件
-		Compress:   false, // 是否压缩
+		MaxSize:    10,
+		MaxBackups: 30,
+		MaxAge:     30,
+		Compress:   false,
 	}
-
-	// 各级别终端色彩
-	cSucc := color.New(color.FgGreen).SprintFunc()
-	cFail := color.New(color.FgRed).SprintFunc()
-	cWarn := color.New(color.FgYellow).SprintFunc()
-	cCrit := color.New(color.FgHiRed, color.Bold).SprintFunc()
-
-	// 构建复合输出写入器：终端标准输出 + 日志文件
-	outGeneral := io.MultiWriter(os.Stdout, ljLogger)
-	outError := io.MultiWriter(os.Stderr, ljLogger)
-
-	// 时间戳格式前缀
-	flags := log.Ldate | log.Ltime 
-
-	// 实例化各个级别 Logger
-	infoLogger = log.New(outGeneral, "[INFO] ", flags)
-	succLogger = log.New(outGeneral, cSucc("[SUCCESS] "), flags)
-	warnLogger = log.New(outGeneral, cWarn("[WARN] "), flags)
-	failLogger = log.New(outError, cFail("[FAIL] "), flags)
-	critLogger = log.New(outError, cCrit("[CRITICAL] "), flags)
 
 	return nil
 }
 
-// 封装导出供业务调用的函数
-func Info(format string, v ...interface{}) { infoLogger.Printf(format, v...) }
-func Succ(format string, v ...interface{}) { succLogger.Printf(format, v...) }
-func Warn(format string, v ...interface{}) { warnLogger.Printf(format, v...) }
-func Fail(format string, v ...interface{}) { failLogger.Printf(format, v...) }
-func Crit(format string, v ...interface{}) { critLogger.Printf(format, v...) }
+func writeLog(level, plainPrefix, format string, v ...interface{}) {
+	msg := fmt.Sprintf(format, v...)
+	timestamp := time.Now().Format("2006/01/02 15:04:05")
+
+	if fileLogger != nil {
+		plainLine := fmt.Sprintf("%s %s %s\n", plainPrefix, timestamp, msg)
+		fileLogger.Write([]byte(plainLine))
+	}
+
+	prefixColorFunc := getPrefixColor(level)
+	coloredPrefix := prefixColorFunc(plainPrefix)
+	coloredLine := fmt.Sprintf("%s %s %s\n", coloredPrefix, timestamp, msg)
+	
+	if level == "FAIL" || level == "CRITICAL" {
+		fmt.Fprint(os.Stderr, coloredLine)
+	} else {
+		fmt.Fprint(os.Stdout, coloredLine)
+	}
+}
+
+func getPrefixColor(level string) func(a ...interface{}) string {
+	switch level {
+	case "SUCCESS":
+		return color.New(color.FgGreen).SprintFunc()
+	case "WARN":
+		return color.New(color.FgYellow).SprintFunc()
+	case "FAIL":
+		return color.New(color.FgRed).SprintFunc()
+	case "CRITICAL":
+		return color.New(color.FgHiRed).SprintFunc()
+	default:
+		return color.New(color.Reset).SprintFunc()
+	}
+}
+
+func Info(format string, v ...interface{}) {
+	writeLog("INFO", "[INFO]", format, v...)
+}
+
+func Succ(format string, v ...interface{}) {
+	writeLog("SUCCESS", "[SUCCESS]", format, v...)
+}
+
+func Warn(format string, v ...interface{}) {
+	writeLog("WARN", "[WARN]", format, v...)
+}
+
+func Fail(format string, v ...interface{}) {
+	writeLog("FAIL", "[FAIL]", format, v...)
+}
+
+func Crit(format string, v ...interface{}) {
+	writeLog("CRITICAL", "[CRITICAL]", format, v...)
+}

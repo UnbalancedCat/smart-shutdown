@@ -11,8 +11,8 @@
 # Output directory for cross-platform builds
 /bin/
 /build/
-smart-monitor
-smart-monitor.exe
+smart-shutdown
+smart-shutdown.exe
 
 # Output of the go coverage tool
 *.out
