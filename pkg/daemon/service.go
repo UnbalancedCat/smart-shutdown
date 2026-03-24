@@ -3,11 +3,10 @@ package daemon
 import (
 	"context"
 
+	"github.com/kardianos/service"
 	"smart-shutdown/pkg/config"
 	"smart-shutdown/pkg/logger"
 	"smart-shutdown/pkg/monitor"
-
-	"github.com/kardianos/service"
 )
 
 type program struct {
@@ -41,11 +40,15 @@ func (p *program) Stop(s service.Service) error {
 	return nil
 }
 
-func GetService(cfg *config.Config) (service.Service, error) {
+func GetService(cfg *config.Config, execPath ...string) (service.Service, error) {
 	svcConfig := &service.Config{
 		Name:        "SmartNetworkMonitor",
 		DisplayName: "Smart Network Shutdown Monitor",
 		Description: "A reliable daemon that periodically monitors network states and triggers node suspension logically.",
+	}
+
+	if len(execPath) > 0 && execPath[0] != "" {
+		svcConfig.Executable = execPath[0]
 	}
 
 	prg := &program{

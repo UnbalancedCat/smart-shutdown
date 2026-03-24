@@ -18,6 +18,7 @@ import (
 )
 
 var AppVersion = "dev"
+var verbose bool
 
 func main() {
 	if err := logger.InitLogger(); err != nil {
@@ -42,6 +43,11 @@ func main() {
 	var rootCommand = &cobra.Command{
 		Use:   "smart-shutdown",
 		Short: "智能网络状态检测与自动关机后台服务",
+		PersistentPreRun: func(cmd *cobra.Command, args []string) {
+			if verbose {
+				logger.EnableDebug()
+			}
+		},
 		Run: func(cmd *cobra.Command, args []string) {
 			if showVersion {
 				fmt.Printf("========== Smart Network Shutdown Monitor ==========\n")
@@ -59,6 +65,7 @@ func main() {
 
 	rootCommand.CompletionOptions.DisableDefaultCmd = true
 	rootCommand.Flags().BoolVarP(&showVersion, "version", "V", false, "输出当前二进制内核版本并联网拉取发布树状态")
+	rootCommand.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "打印底层部署及环境追溯 Debug 信息")
 
 	cmds := []*cobra.Command{
 		{
@@ -69,7 +76,7 @@ func main() {
 				currentExe, _ := os.Executable()
 
 				if !strings.EqualFold(filepath.Clean(currentExe), filepath.Clean(targetExe)) {
-					logger.Info("预备自动配置系统级全局环境，本体克隆下放目录: %s", targetExe)
+					logger.Debug("检测到跨域部署: 待本体克隆存放底层根目录: %s", targetExe)
 					if err := os.MkdirAll(targetDir, 0755); err != nil {
 						logger.Fail("创建系统目录核心区路径溃败 (请核查最高系统权限身份执行需求): %v", err)
 						return
@@ -87,7 +94,7 @@ func main() {
 						if err != nil {
 							logger.Warn("改写操作系统的环境变量集合遭受阻拦: %v", err)
 						} else {
-							logger.Info("执行路径已完备挂载进 Windows Global PATH 域内，用户可通过全局指引调取 smart-shutdown。")
+							logger.Debug("成功挂载底层环境变量: Windows Machine Path 追加了 %s 指引。", targetDir)
 						}
 					}
 				}
@@ -112,13 +119,14 @@ func main() {
 
 				if !strings.EqualFold(filepath.Clean(currentExe), filepath.Clean(targetExe)) {
 					if _, err := os.Stat(targetExe); err == nil {
-						logger.Info("查明曾执行过部署注入逻辑，现在开始彻底摘毁并清理目录: %s", targetExe)
+						logger.Debug("查明环境曾记录过全局部署逻辑，现已启动强力移除可执行源地址流: %s", targetExe)
 						os.Remove(targetExe)
 						
 						if runtime.GOOS == "windows" {
 							os.Remove(targetDir)
 							envClearCmd := fmt.Sprintf(`$p=[Environment]::GetEnvironmentVariable("Path","Machine");$np=($p -split ';' | Where-Object {$_ -ne "%s" -and $_ -ne ""}) -join ';';[Environment]::SetEnvironmentVariable("Path",$np,"Machine")`, targetDir)
 							exec.Command("powershell", "-Command", envClearCmd).Run()
+							logger.Debug("环境变量系统清理：Windows Global Path 中的指向挂载项业已剥除卸载完成。")
 						}
 					}
 				}
@@ -162,7 +170,7 @@ func main() {
 					service.Control(svc, "start")
 					fmt.Println("============ 热更新无感流闭环执行彻底成功！ ============")
 				} else {
-					fmt.Println("============ 热更核心接替执行完毕！============\n(注: 您的当前终端并不作为真正的宿存执行体。如目前您另行开启了 CMD 窗格在死循环执行此包前台，请人工叉掉那个窗口使其重新载入新版本！)")
+					fmt.Println("============ 热更核心接替执行完毕！============\n(注: 您的当前终端并不作为真正的宿存执行体。\n如目前您另行开启了 CMD 窗格在死循环执行此包前台，请人工叉掉那个窗口使其重新载入新版本！)")
 				}
 			},
 		},

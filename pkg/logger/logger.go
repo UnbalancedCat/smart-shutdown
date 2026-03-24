@@ -12,6 +12,7 @@ import (
 )
 
 var fileLogger *lumberjack.Logger
+var debugEnabled bool
 
 func InitLogger() error {
 	logDir := config.GetLogDir()
@@ -31,6 +32,10 @@ func InitLogger() error {
 	}
 
 	return nil
+}
+
+func EnableDebug() {
+	debugEnabled = true
 }
 
 func writeLog(level, plainPrefix, format string, v ...interface{}) {
@@ -63,8 +68,16 @@ func getPrefixColor(level string) func(a ...interface{}) string {
 		return color.New(color.FgRed).SprintFunc()
 	case "CRITICAL":
 		return color.New(color.FgHiRed).SprintFunc()
+	case "DEBUG":
+		return color.New(color.FgCyan).SprintFunc()
 	default:
 		return color.New(color.Reset).SprintFunc()
+	}
+}
+
+func Debug(format string, v ...interface{}) {
+	if debugEnabled {
+		writeLog("DEBUG", "[DEBUG]", format, v...)
 	}
 }
 
