@@ -112,30 +112,39 @@ func main() {
 			Short: "废除并移除在册的后台服务、扫除环境关联残留",
 			Run: func(cmd *cobra.Command, args []string) {
 				service.Control(svc, "stop")
-				handleServiceControl(svc, "uninstall")
+				if !handleServiceControl(svc, "uninstall") {
+					return
+				}
 
 				targetDir, targetExe := getTargetSystemPath()
 				currentExe, _ := os.Executable()
+				isSelfExe := strings.EqualFold(filepath.Clean(currentExe), filepath.Clean(targetExe))
 
-				if !strings.EqualFold(filepath.Clean(currentExe), filepath.Clean(targetExe)) {
-					if _, err := os.Stat(targetExe); err == nil {
-						logger.Debug("查明环境曾记录过全局部署逻辑，现已启动强力移除可执行源地址流: %s", targetExe)
+				// Clean up PATH (Windows)
+				if runtime.GOOS == "windows" {
+					envClearCmd := fmt.Sprintf(`$p=[Environment]::GetEnvironmentVariable("Path","Machine");$np=($p -split ';' | Where-Object {$_ -ne "%s" -and $_ -ne ""}) -join ';';[Environment]::SetEnvironmentVariable("Path",$np,"Machine")`, targetDir)
+					exec.Command("powershell", "-Command", envClearCmd).Run()
+					logger.Debug("环境变量系统清理：Windows Global Path 中的指向挂载项业已剥除卸载完成。")
+				}
+
+				// Delete executable
+				if _, err := os.Stat(targetExe); err == nil {
+					if isSelfExe && runtime.GOOS == "windows" {
+						// Windows: cannot delete a running exe, use delayed self-deletion
+						delCmd := fmt.Sprintf(`ping 127.0.0.1 -n 2 > nul & del "%s" & rmdir "%s"`, targetExe, targetDir)
+						exec.Command("cmd", "/C", "start", "/min", "cmd", "/C", delCmd).Start()
+						logger.Debug("已调度延迟自删除任务: %s", targetExe)
+					} else {
 						os.Remove(targetExe)
-						
 						if runtime.GOOS == "windows" {
 							os.Remove(targetDir)
-							envClearCmd := fmt.Sprintf(`$p=[Environment]::GetEnvironmentVariable("Path","Machine");$np=($p -split ';' | Where-Object {$_ -ne "%s" -and $_ -ne ""}) -join ';';[Environment]::SetEnvironmentVariable("Path",$np,"Machine")`, targetDir)
-							exec.Command("powershell", "-Command", envClearCmd).Run()
-							logger.Debug("环境变量系统清理：Windows Global Path 中的指向挂载项业已剥除卸载完成。")
 						}
+						logger.Debug("已移除可执行文件: %s", targetExe)
 					}
 				}
 
-				if config.ConfirmConfigCleanup() {
-					configDir := config.GetConfigDir()
-					os.RemoveAll(configDir)
-					fmt.Println("配置文件与日志已清除。")
-				}
+				// Prompt for config and log cleanup
+				config.ConfirmAndCleanup()
 			},
 		},
 		{
@@ -287,18 +296,19 @@ func main() {
 	}
 }
 
-func handleServiceControl(s service.Service, action string) {
+func handleServiceControl(s service.Service, action string) bool {
 	err := service.Control(s, action)
 	if err != nil {
 		errStr := err.Error()
 		if strings.Contains(errStr, "Access is denied") || strings.Contains(errStr, "permission denied") || strings.Contains(errStr, "拒绝访问") {
 			logger.Fail("管控流程 [%s] 触发越级防卫！无核准身份特设记录。请开具含有全 Root 及高配权限窗格承接口径。", action)
-			return
+			return false
 		}
 		logger.Crit("后台执行流程组块阻断报错 [%s] : %v", action, err)
-		return
+		return false
 	}
 	logger.Succ("指令动作 [%s] 解析下发执行完毕，无阻断警告。", action)
+	return true
 }
 
 func printLastLogLines(n int) {

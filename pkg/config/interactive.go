@@ -63,25 +63,39 @@ func InteractiveSetup() (*Config, error) {
 	return cfg, nil
 }
 
-// ConfirmConfigCleanup prompts the user to confirm deletion of config and log files.
-// Returns true if the user confirms. Non-terminal stdin defaults to no.
-func ConfirmConfigCleanup() bool {
+// ConfirmAndCleanup prompts the user to confirm deletion of config and log files separately.
+// Non-terminal stdin skips all prompts.
+func ConfirmAndCleanup() {
 	if !isTerminal() {
-		return false
+		return
 	}
 
+	scanner := bufio.NewScanner(os.Stdin)
 	configDir := GetConfigDir()
 	configPath := filepath.Join(configDir, "config.json")
-	if _, err := os.Stat(configPath); err != nil {
-		return false
+	logDir := GetLogDir()
+
+	if _, err := os.Stat(configPath); err == nil {
+		fmt.Printf("检测到配置文件: %s\n是否清除配置文件？[y/N]: ", configPath)
+		if scanner.Scan() && strings.EqualFold(strings.TrimSpace(scanner.Text()), "y") {
+			os.Remove(configPath)
+			fmt.Println("配置文件已清除。")
+		}
 	}
 
-	fmt.Printf("检测到配置文件: %s\n是否一并清除配置文件与日志？[y/N]: ", configDir)
-	scanner := bufio.NewScanner(os.Stdin)
-	if scanner.Scan() {
-		return strings.EqualFold(strings.TrimSpace(scanner.Text()), "y")
+	if _, err := os.Stat(logDir); err == nil {
+		fmt.Printf("检测到日志目录: %s\n是否清除日志文件？[y/N]: ", logDir)
+		if scanner.Scan() && strings.EqualFold(strings.TrimSpace(scanner.Text()), "y") {
+			os.RemoveAll(logDir)
+			fmt.Println("日志文件已清除。")
+		}
 	}
-	return false
+
+	// If configDir is now empty, remove it too
+	entries, err := os.ReadDir(configDir)
+	if err == nil && len(entries) == 0 {
+		os.Remove(configDir)
+	}
 }
 
 func promptString(scanner *bufio.Scanner, label, defaultVal string, validate func(string) error) string {
